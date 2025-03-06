@@ -1,0 +1,141 @@
+from typing import TypedDict, Annotated, List
+import tkinter as tk
+from tkinter import messagebox, scrolledtext
+from PIL import Image, ImageTk
+from google.generativeai import configure, GenerativeModel
+import requests
+from io import BytesIO
+
+
+configure(api_key="AIzaSyBmMZXKFH3GYNw10LtXCbIXsoAdQ2ariWc")
+gemini_model = GenerativeModel("gemini-2.0-flash")
+
+class PlannerState(TypedDict):
+    messages: Annotated[List[str], "the messages in the conversation"]
+    city: str
+    interests: List[str]
+    days: int
+    itinerary: str
+
+# Generate an itinerary using Gemini AI
+def generate_itinerary(city: str, interests: List[str], days: int) -> str:
+    interest_str = ", ".join(interests)
+    
+    prompt = f"""
+    Create a unique {days}-day travel itinerary for {city} based on the following interests: {interest_str}.
+    Each day's plan should include:
+    - Morning: Activities like sightseeing, nature walks, or cultural visits.
+    - Afternoon: Adventure activities, historical tours, or food experiences.
+    - Evening: Entertainment, nightlife, or relaxation options.
+    
+    Ensure each day has different activities and travel tips.
+    Format the response in a structured way.
+    """
+
+    try:
+        response = gemini_model.generate_content(prompt)
+        return response.text if response else "⚠️ Could not generate itinerary. Please try again."
+    except Exception as e:
+        return f"⚠️ Error generating itinerary: {str(e)}"
+
+# GUI Setup
+def create_ui():
+    def get_itinerary():
+        city = city_entry.get().strip()
+        interests = interests_entry.get().strip().split(", ")
+        try:
+            days = int(days_entry.get().strip())
+            if not city or not interests or days <= 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter a valid city, interests, and number of days.")
+            return
+
+        itinerary = generate_itinerary(city, interests, days)
+        
+        # Clear previous text
+        result_text.config(state=tk.NORMAL)
+        result_text.delete(1.0, tk.END)
+
+        # Add formatted text with colors
+        add_colored_text(result_text, f"🌍 {days}-Day Travel Plan for {city} 🌍\n", "title")
+        result_text.insert(tk.END, "\n")
+
+        # Formatting response using colors
+        for line in itinerary.split("\n"):
+            if "📅 Day" in line:
+                add_colored_text(result_text, f"\n{line}\n", "day_title")
+            elif "🌅 Morning:" in line:
+                add_colored_text(result_text, "🌅 Morning: ", "morning")
+                result_text.insert(tk.END, line.replace("🌅 Morning:", "").strip() + "\n")
+            elif "🌞 Afternoon:" in line:
+                add_colored_text(result_text, "🌞 Afternoon: ", "afternoon")
+                result_text.insert(tk.END, line.replace("🌞 Afternoon:", "").strip() + "\n")
+            elif "🌙 Evening:" in line:
+                add_colored_text(result_text, "🌙 Evening: ", "evening")
+                result_text.insert(tk.END, line.replace("🌙 Evening:", "").strip() + "\n")
+            elif "🌦️ Weather Conditions:" in line or "🚗 Best Mode of Transport:" in line:
+                add_colored_text(result_text, f"\n{line}\n", "section_title")
+            else:
+                result_text.insert(tk.END, line + "\n")
+
+        result_text.config(state=tk.DISABLED)
+
+    def add_colored_text(widget, text, tag):
+        widget.insert(tk.END, text, tag)
+
+    root = tk.Tk()
+    root.title("🌍 AI Travel Planner")
+    root.geometry("800x600")
+
+    # Load the background image from a local file
+    bg_image = Image.open("map.jpg")  # Replace with the actual path to your local image file
+    bg_image = bg_image.resize((800, 600), Image.LANCZOS)
+    bg_photo = ImageTk.PhotoImage(bg_image)
+
+    # Create a canvas to place the background image
+    canvas = tk.Canvas(root, width=800, height=600)
+    canvas.pack(fill="both", expand=True)
+    canvas.create_image(0, 0, image=bg_photo, anchor="nw")
+
+    # Header
+    header_frame = tk.Frame(root, bg="#2E8B57", pady=10)
+    header_frame.place(relx=0.5, rely=0.1, anchor="center")
+    header_label = tk.Label(header_frame, text="AI Travel Planner", font=("Arial", 24, "bold"), bg="#2E8B57", fg="white")
+    header_label.pack()
+
+    # Input Frame
+    input_frame = tk.Frame(root, bg="#98FB98", pady=10)
+    input_frame.place(relx=0.5, rely=0.3, anchor="center")
+
+    tk.Label(input_frame, text="Enter City:", font=("Arial", 14, "bold"), bg="#98FB98", fg="#006400").grid(row=0, column=0, sticky=tk.W, pady=5)
+    city_entry = tk.Entry(input_frame, font=("Arial", 12), width=30)
+    city_entry.grid(row=0, column=1, pady=5)
+
+    tk.Label(input_frame, text="Enter Number of Days:", font=("Arial", 14, "bold"), bg="#98FB98", fg="#006400").grid(row=1, column=0, sticky=tk.W, pady=5)
+    days_entry = tk.Entry(input_frame, font=("Arial", 12), width=30)
+    days_entry.grid(row=1, column=1, pady=5)
+
+    tk.Label(input_frame, text="Enter Interests (comma separated):", font=("Arial", 14, "bold"), bg="#98FB98", fg="#006400").grid(row=2, column=0, sticky=tk.W, pady=5)
+    interests_entry = tk.Entry(input_frame, font=("Arial", 12), width=30)
+    interests_entry.grid(row=2, column=1, pady=5)
+
+    generate_btn = tk.Button(input_frame, text="✨ Generate AI Itinerary ✨", font=("Arial", 14, "bold"), bg="#32CD32", fg="white", command=get_itinerary)
+    generate_btn.grid(row=3, columnspan=2, pady=20)
+
+    # Scrollable output box
+    result_text = scrolledtext.ScrolledText(root, font=("Arial", 12), height=18, width=80, state=tk.DISABLED, wrap=tk.WORD, bg="#F0FFF0", fg="#006400")
+    result_text.place(relx=0.5, rely=0.75, anchor="center")
+
+    # Define text tags for coloring
+    result_text.tag_configure("title", font=("Arial", 16, "bold"), foreground="#006400")
+    result_text.tag_configure("day_title", font=("Arial", 14, "bold"), foreground="#228B22")
+    result_text.tag_configure("morning", font=("Arial", 12, "bold"), foreground="#32CD32")
+    result_text.tag_configure("afternoon", font=("Arial", 12, "bold"), foreground="#3CB371")
+    result_text.tag_configure("evening", font=("Arial", 12, "bold"), foreground="#2E8B57")
+    result_text.tag_configure("section_title", font=("Arial", 14, "bold"), foreground="#006400")
+
+    root.mainloop()
+
+# Start the UI
+create_ui()
